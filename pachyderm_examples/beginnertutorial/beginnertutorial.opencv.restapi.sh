@@ -4,6 +4,14 @@
 
 function usage {
   echo "Usage: beginnertutorial.opencv.restapi.sh"
+  echo "-d: delete all pachyderm resources for tutorial"
+  echo "-h: help"
+  echo "-i: interactive prompt to continue after each step"
+  echo "-z: timezone, default ${defaults[timezone]}"
+  echo "Examples:"
+  echo "beginnertutorial.opencv.restapi.sh"
+  echo "beginnertutorial.opencv.restapi.sh -i"
+  echo "beginnertutorial.opencv.restapi.sh -d"
 }
 
 function log {
@@ -11,20 +19,21 @@ function log {
   echo "$(TZ=$timezone date +%F_%T.%6N_%Z): $line"
 }
 
-function curlCall1 {
-  local api=$1
-  local params=$(cat)
-
-  echo "API: $api"
-  echo -n "Request: "
-  echo "$params" | jq
-
-  echo -n "Response: "
-  curl -s http://localhost/api/$api -d@- <<EOF | jq
-$params
-EOF
+# converts json on stdin to form that can be embedded as a string in other json
+# escapes doublequotes and backslashes and deletes newlines
+function escapeJsonAsString {
+  sed 's/["\\]/\\&/g' | tr -d '\n'
 }
 
+function interactivePrompt {
+  $interactive || return
+  read -N1 -p "Press q to quit, R to run non-interactively or any other key to continue interactively.. "
+  echo
+  [[ $REPLY == [qQ]* ]] && exit
+  [[ $REPLY == R* ]] && interactive=false
+}
+
+# send API request with curl
 function curlCall {
   local api=$1
   local params=$2
@@ -39,28 +48,28 @@ $params
 EOF
 }
 
-# converts json on stdin to form that can be embedded as a string in other json
-# escapes doublequotes and backslashes and deletes newlines
-function escapeJsonAsString {
-  sed 's/["\\]/\\&/g' | tr -d '\n'
-}
-
 function clean {
   local repo=$rawfilesRepo
   local pipeline
   local es
   local cmd
 
-  echo "Delete pipelines ${pipelines[*]}"
+  log "Switch to $context context"
+  cmd="pachctl config set active-context $context"
+  echo "$cmd"
+  $cmd
+  echo
+
+  log "Delete pipelines ${pipelines[*]}"
   for pipeline in ${pipelines[*]}; do
-    echo "Delete pipeline $pipeline"
+    log "Delete pipeline $pipeline"
     cmd="pachctl delete pipeline $pipeline"
     echo "$cmd"
     $cmd
     echo
   done
 
-  echo "Delete repo $repo"
+  log "Delete $repo repo"
   cmd="pachctl delete repo $repo"
   echo "$cmd"
   $cmd
@@ -68,21 +77,27 @@ function clean {
   echo
 
   if ((es != 0)); then
-    echo "Failed to delete repo $repo error $es"
-    echo "Force delete repo $repo"
+    log >&2 "Failed to delete $repo repo error $es"
+    log "Force delete $repo repo"
     cmd="pachctl delete repo -f -v $repo"
     echo "$cmd"
     $cmd
     echo
   fi
 
-  echo "Delete project $project"
+  log "Delete $project project"
   cmd="pachctl delete project $project"
   echo "$cmd"
   $cmd
   es=$?
   echo
 
+  log "Delete $context context and switch to default context"
+  pachctl config set active-context default
+  cmd="pachctl config delete context $context"
+  echo "$cmd"
+  $cmd
+  echo
 }
 
 declare -A defaults=(
@@ -91,10 +106,10 @@ declare -A defaults=(
   [timezone]=America/New_York
 )
 
-while getopts "df:hn:p:P:z:" opt; do
+while getopts "dhiz:" opt; do
   case $opt in
     d) clean=true;;
-    p) pipeline=$OPTARG;;
+    i) interactive=true;;
     z) timezone=$OPTARG;;
     h) usage; exit 0;;
     *) usage; exit 1
@@ -104,6 +119,7 @@ shift $((OPTIND-1))
 
 # defaults
 : ${clean:=false}
+: ${interactive:=false}
 : ${sleepSeconds:=${defaults[sleepSeconds]}}
 : ${timeoutSeconds:=${defaults[timeoutSeconds]}}
 : ${timezone:=${defaults[timezone]}}
@@ -123,17 +139,12 @@ collager=content_collager
 
 declare -a pipelines=($converter $flattener $tracer $gifer $shuffler $collager)
 
-#{ jq -C <<<'{"repo": {"name": "testrepo_3"}, "description": "Test repo 3"}'; echo; echo; }|tee >(sed -E 's/\x1b[[0-9;]*m//g' | curl -s http://localhost/api/pfs_v2.API/CreateRepo -d@-)
-# echo '{"cluster_deployment_id": "dev", "project": "video-to-frame-traces"}'|{ jq -C; echo; echo; }|tee >(sed -E 's/\x1b[[0-9;]*m//g'|nl)
-
-log "Check pachyderm version"
-#curlCall1 versionpb_v2.API/GetVersion <<EOF || exit 2
-curlCall versionpb_v2.API/GetVersion <<EOF || exit 2
-{}
-EOF
+log "Show pachyderm version"
+api=versionpb_v2.API/GetVersion
+params='{}'
+curlCall $api "$params" || exit 2
 echo
-
-exit
+interactivePrompt
 
 if $clean; then
   clean
@@ -152,6 +163,7 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
 log "Show current active context"
 cmd="pachctl config get active-context"
@@ -159,6 +171,7 @@ echo "$cmd"
 origContext=$($cmd)
 echo "$origContext"
 echo
+interactivePrompt
 
 contextConfig=$(cat <<EOF
 {
@@ -176,6 +189,7 @@ pachctl config set context $context <<EOF
 $contextConfig
 EOF
 echo
+interactivePrompt
 
 log "Change active context from $origContext to $context"
 cmd="pachctl config set active-context $context"
@@ -183,14 +197,16 @@ echo "$cmd"
 $cmd
 pachctl config get active-context
 echo
+interactivePrompt
 
-log "Show all projects"
+log "Show all projects before creating pipelines"
 api=pfs_v2.API/ListProject
 params='{}'
 curlCall $api "$params"
 echo
+interactivePrompt
 
-log "Create repo $rawfilesRepo to store raw videos and images"
+log "Create repo $rawfilesRepo to store original videos and images"
 api=pfs_v2.API/CreateRepo
 params=$(cat <<EOF
 {
@@ -205,12 +221,14 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
-log "Show all repos"
+log "Show all repos before creating pipelines"
 api=pfs_v2.API/ListRepo
 params='{}'
 curlCall $api "$params"
 echo
+interactivePrompt
 
 file=liberty.jpg
 srcpath=https://raw.githubusercontent.com/pachyderm/docs-content/main/images/opencv/liberty.jpg
@@ -246,6 +264,7 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
 file=cat-sleeping.MOV
 srcpath=https://storage.googleapis.com/docs-tutorial-resoruces/cat-sleeping.MOV
@@ -281,6 +300,7 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
 file=robot.png
 srcpath=https://raw.githubusercontent.com/pachyderm/docs-content/main/images/opencv/robot.jpg
@@ -316,7 +336,7 @@ EOF
 )
 curlCall $api "$params"
 echo
-
+interactivePrompt
 
 file=highway.MOV
 srcpath=https://storage.googleapis.com/docs-tutorial-resoruces/highway.MOV
@@ -352,6 +372,7 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
 log "Show all files in $rawfilesRepo repo"
 api=pfs_v2.API/ListFile
@@ -379,6 +400,7 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
 cat <<EOF > $converter.json
 {
@@ -409,10 +431,11 @@ cat <<EOF > $converter.json
 }
 EOF
 
-log "Converter pipeline file $converter.json"
-cat $converter.json
+log "Converter pipeline 1 file $converter.json"
+jq <$converter.json
 echo
 
+log "Create $converter pipeline 1 from $converter.yaml"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -422,6 +445,7 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
 cat <<EOF > $flattener.json
 {
@@ -452,10 +476,11 @@ cat <<EOF > $flattener.json
 }
 EOF
 
-log "Flattener pipeline file $flattener.json"
-cat $flattener.json
+log "Flattener pipeline 2 file $flattener.json"
+jq <$flattener.json
 echo
 
+log "Create $flattener pipeline 2 from $flattener.yaml"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -465,6 +490,7 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
 cat <<EOF > $tracer.json
 {
@@ -507,10 +533,11 @@ cat <<EOF > $tracer.json
 }
 EOF
 
-log "Tracer pipeline file $tracer.json"
-cat $tracer.json
+log "Tracer pipeline 3 file $tracer.json"
+jq <$tracer.json
 echo
 
+log "Create $tracer pipeline 3 from $tracer.yaml"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -520,6 +547,7 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
 cat <<EOF > $gifer.json
 {
@@ -562,10 +590,11 @@ cat <<EOF > $gifer.json
 }
 EOF
 
-log "Gifer pipeline file $gifer.json"
-cat $gifer.json
+log "Gifer pipeline 4 file $gifer.json"
+jq <$gifer.json
 echo
 
+log "Create $gifer pipeline 4 from $gifer.yaml"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -575,6 +604,7 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
 cat <<EOF > $shuffler.json
 {
@@ -624,10 +654,11 @@ cat <<EOF > $shuffler.json
 }
 EOF
 
-log "Shuffler pipeline file $shuffler.json"
-cat $shuffler.json
+log "Shuffler pipeline 5 file $shuffler.json"
+jq <$shuffler.json
 echo
 
+log "Create $shuffler pipeline 5 from $shuffler.yaml"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -637,6 +668,7 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
 cat <<EOF > $collager.json
 {
@@ -668,10 +700,11 @@ cat <<EOF > $collager.json
 }
 EOF
 
-log "Collager pipeline file $collager.json"
-cat $collager.json
+log "Collager pipeline 6 file $collager.json"
+jq <$collager.json
 echo
 
+log "Create $collager pipeline 6 from $collager.yaml"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -681,50 +714,96 @@ EOF
 )
 curlCall $api "$params"
 echo
+interactivePrompt
 
-log "Show all projects"
-cmd="pachctl list projects"
-echo "$cmd"
-$cmd
+log "Show all projects after creating pipelines"
+api=pfs_v2.API/ListProject
+params='{}'
+curlCall $api "$params"
 echo
+interactivePrompt
 
-log "Show all repos"
-cmd="pachctl list repos"
-echo "$cmd"
-$cmd
+log "Show all repos after creating pipelines"
+api=pfs_v2.API/ListRepo
+params='{}'
+curlCall $api "$params"
 echo
+interactivePrompt
 
-log "Show all pipelines"
-cmd="pachctl list pipelines"
-echo "$cmd"
-$cmd
+log "Show all pipelines created"
+api=pps_v2.API/ListPipeline
+params='{}'
+curlCall $api "$params"
 echo
+interactivePrompt
 
-echo "Sleep $sleepSeconds.."
+log "Sleep $sleepSeconds.."
 sleep $sleepSeconds
 echo
 
 log "Show all commits"
-cmd="pachctl list commits"
-echo "$cmd"
-$cmd
+api=pfs_v2.API/ListCommitSet
+params=$(cat <<EOF
+{
+  "project": {
+    "name": "$project"
+  }
+}
+EOF
+)
+curlCall $api "$params"
 echo
+interactivePrompt
 
-echo "Sleep $sleepSeconds.."
+
+log "Sleep $sleepSeconds.."
 sleep $sleepSeconds
 echo
 
 log "Show jobs for $collager pipeline"
-cmd="pachctl list jobs --pipeline $collager"
-echo "$cmd"
-$cmd
+api=pps_v2.API/ListJob
+params=$(cat <<EOF
+{
+  "pipeline": {
+    "name": "$collager",
+    "project": {
+      "name": "$project"
+    }
+  }
+}
+EOF
+)
+curlCall $api "$params"
 echo
+interactivePrompt
 
 log "Show files in $collager repo"
-cmd="pachctl list files $collager@master"
-echo "$cmd"
-$cmd
+api=pfs_v2.API/ListFile
+params=$(cat <<EOF
+{
+  "file": {
+    "commit": {
+      "repo": {
+        "name": "$collager",
+        "project": {"name": "$project"},
+        "type": "user"
+      },
+      "branch": {
+        "repo": {
+          "name": "$collager",
+          "project": {"name": "$project"},
+          "type": "user"
+        },
+        "name": "master"
+      }
+    }
+  }
+}
+EOF
+)
+curlCall $api "$params"
 echo
+interactivePrompt
 
 log "Keeping $context as current active context - run following command to restore original context $origContext if desired"
 cmd="pachctl config set active-context $origContext"
