@@ -4,11 +4,27 @@
 
 function usage {
   echo "Usage: beginnertutorial.opencv.sh"
+  echo "-d: delete all pachyderm resources for tutorial"
+  echo "-h: help"
+  echo "-i: interactive prompt to continue after each step"
+  echo "-z: timezone, default ${defaults[timezone]}"
+  echo "Examples:"
+  echo "beginnertutorial.opencv.sh"
+  echo "beginnertutorial.opencv.sh -i"
+  echo "beginnertutorial.opencv.sh -d"
 }
 
 function log {
   local line=$1
   echo "$(TZ=$timezone date +%F_%T.%6N_%Z): $line"
+}
+
+function interactivePrompt {
+  $interactive || return
+  read -N1 -p "Press q to quit, R to run non-interactively or any other key to continue interactively.. "
+  echo
+  [[ $REPLY == [qQ]* ]] && exit
+  [[ $REPLY == R* ]] && interactive=false
 }
 
 function clean {
@@ -70,10 +86,10 @@ declare -A defaults=(
   [timezone]=America/New_York
 )
 
-while getopts "df:hn:p:P:z:" opt; do
+while getopts "dhiz:" opt; do
   case $opt in
     d) clean=true;;
-    p) pipeline=$OPTARG;;
+    i) interactive=true;;
     z) timezone=$OPTARG;;
     h) usage; exit 0;;
     *) usage; exit 1
@@ -83,16 +99,10 @@ shift $((OPTIND-1))
 
 # defaults
 : ${clean:=false}
+: ${interactive:=false}
 : ${sleepSeconds:=${defaults[sleepSeconds]}}
 : ${timeoutSeconds:=${defaults[timeoutSeconds]}}
 : ${timezone:=${defaults[timezone]}}
-
-if false; then
-if $clean && [[ -z $pipeline ]]; then
-    echo >&2 "Pipeline name to delete is required with -p option"
-    exit 1
-fi
-fi
 
 # variables
 
@@ -109,7 +119,7 @@ collager=content_collager
 
 declare -a pipelines=($converter $flattener $tracer $gifer $shuffler $collager)
 
-log "Check pachyderm version"
+log "Show pachyderm version"
 cmd="pachctl version"
 echo "$cmd"
 $cmd || exit 2
@@ -125,6 +135,7 @@ cmd="pachctl create project $project"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 log "Show current active context"
 cmd="pachctl config get active-context"
@@ -132,6 +143,7 @@ echo "$cmd"
 origContext=$($cmd)
 echo "$origContext"
 echo
+interactivePrompt
 
 contextConfig=$(cat <<EOF
 {
@@ -149,30 +161,35 @@ pachctl config set context $context <<EOF
 $contextConfig
 EOF
 echo
+interactivePrompt
 
 log "Change active context from $origContext to $context"
 cmd="pachctl config set active-context $context"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 log "Show all projects"
 cmd="pachctl list projects"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 log "Create repo $rawfilesRepo to store raw videos and images"
 cmd="pachctl create repo $rawfilesRepo"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 log "Show all repos"
 cmd="pachctl list repos"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 file=liberty.jpg
 srcpath=https://raw.githubusercontent.com/pachyderm/docs-content/main/images/opencv/liberty.jpg
@@ -181,6 +198,7 @@ cmd="pachctl put file $rawfilesRepo@master:$file -f $srcpath"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 file=cat-sleeping.MOV
 srcpath=https://storage.googleapis.com/docs-tutorial-resoruces/cat-sleeping.MOV
@@ -189,6 +207,7 @@ cmd="pachctl put file $rawfilesRepo@master:$file -f $srcpath"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 file=robot.png
 srcpath=https://raw.githubusercontent.com/pachyderm/docs-content/main/images/opencv/robot.jpg
@@ -197,6 +216,7 @@ cmd="pachctl put file $rawfilesRepo@master:$file -f $srcpath"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 file=highway.MOV
 srcpath=https://storage.googleapis.com/docs-tutorial-resoruces/highway.MOV
@@ -205,12 +225,14 @@ cmd="pachctl put file $rawfilesRepo@master:$file -f $srcpath"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 log "Show all files in $rawfilesRepo repo"
 cmd="pachctl list files $rawfilesRepo@master"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 cat <<EOF > $converter.yaml
 pipeline:
@@ -231,15 +253,16 @@ transform:
 autoscaling: true
 EOF
 
-log "Converter pipeline file $converter.yaml"
+log "Converter pipeline 1 file $converter.json"
 cat $converter.yaml
 echo
 
-log "Create $converter pipeline from $converter.yaml"
+log "Create $converter pipeline 1 from $converter.yaml"
 cmd="pachctl create pipeline -f $converter.yaml"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 cat <<EOF > $flattener.yaml
 pipeline:
@@ -260,15 +283,16 @@ transform:
 autoscaling: true
 EOF
 
-log "Flattener pipeline file $flattener.yaml"
+log "Flattener pipeline 2 file $flattener.json"
 cat $flattener.yaml
 echo
 
-log "Create $flattener pipeline from $flattener.yaml"
+log "Create $flattener pipeline 2 from $flattener.yaml"
 cmd="pachctl create pipeline -f $flattener.yaml"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 cat <<EOF > $tracer.yaml
 pipeline:
@@ -295,15 +319,16 @@ transform:
 autoscaling: true
 EOF
 
-log "Tracer pipeline file $tracer.yaml"
+log "Tracer pipeline 3 file $tracer.json"
 cat $tracer.yaml
 echo
 
-log "Create $tracer pipeline from $tracer.yaml"
+log "Create $tracer pipeline 3 from $tracer.yaml"
 cmd="pachctl create pipeline -f $tracer.yaml"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 cat <<EOF > $gifer.yaml
 pipeline:
@@ -330,20 +355,21 @@ transform:
 autoscaling: true
 EOF
 
-log "Gifer pipeline file $gifer.yaml"
+log "Gifer pipeline 4 file $gifer.json"
 cat $gifer.yaml
 echo
 
-log "Create $gifer pipeline from $gifer.yaml"
+log "Create $gifer pipeline 4 from $gifer.yaml"
 cmd="pachctl create pipeline -f $gifer.yaml"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 cat <<EOF > $shuffler.yaml
 pipeline:
   name: $shuffler
-  description: A pipeline that collapses our inputs into one datum for the collager.
+description: A pipeline that collapses our inputs into one datum for the collager.
 input:
   union:
     - pfs:
@@ -370,20 +396,21 @@ transform:
 autoscaling: true
 EOF
 
-log "Shuffler pipeline file $shuffler.yaml"
+log "Shuffler pipeline 5 file $shuffler.json"
 cat $shuffler.yaml
 echo
 
-log "Create $shuffler pipeline from $shuffler.yaml"
+log "Create $shuffler pipeline 5 from $shuffler.yaml"
 cmd="pachctl create pipeline -f $shuffler.yaml"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 cat <<EOF > $collager.yaml
 pipeline:
   name: $collager
-  description: A pipeline that creates a static HTML collage.
+description: A pipeline that creates a static HTML collage.
 input:
   pfs:
     glob: "/"
@@ -402,35 +429,39 @@ transform:
 autoscaling: true
 EOF
 
-log "Collager pipeline file $collager.yaml"
+log "Collager pipeline 6 file $collager.json"
 cat $collager.yaml
 echo
 
-log "Create $collager pipeline from $collager.yaml"
+log "Create $collager pipeline 6 from $collager.yaml"
 cmd="pachctl create pipeline -f $collager.yaml"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 log "Show all projects"
 cmd="pachctl list projects"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 log "Show all repos"
 cmd="pachctl list repos"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 log "Show all pipelines"
 cmd="pachctl list pipelines"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
-echo "Sleep $sleepSeconds.."
+log "Sleep $sleepSeconds.."
 sleep $sleepSeconds
 echo
 
@@ -439,8 +470,9 @@ cmd="pachctl list commits"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
-echo "Sleep $sleepSeconds.."
+log "Sleep $sleepSeconds.."
 sleep $sleepSeconds
 echo
 
@@ -449,14 +481,16 @@ cmd="pachctl list jobs --pipeline $collager"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
 log "Show files in $collager repo"
 cmd="pachctl list files $collager@master"
 echo "$cmd"
 $cmd
 echo
+interactivePrompt
 
-log "Keeping $context as current active context - run following command to restore original context $origContext if desired"
+log "Keeping $context as current active context - restore original context $origContext if desired with following command"
 cmd="pachctl config set active-context $origContext"
 echo "$cmd"
 
