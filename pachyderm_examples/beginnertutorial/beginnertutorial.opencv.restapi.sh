@@ -19,8 +19,8 @@ function log {
   echo "$(TZ=$timezone date +%F_%T.%6N_%Z): $line"
 }
 
-# converts json on stdin to form that can be embedded as a string in other json
-# escapes doublequotes and backslashes and deletes newlines
+# convert json on stdin to form that can be embedded as a string in other json
+# escape doublequotes and backslashes and delete newlines
 function escapeJsonAsString {
   sed 's/["\\]/\\&/g' | tr -d '\n'
 }
@@ -435,7 +435,7 @@ log "Converter pipeline 1 file $converter.json"
 jq <$converter.json
 echo
 
-log "Create $converter pipeline 1 from $converter.yaml"
+log "Create $converter pipeline 1 from $converter.json"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -480,7 +480,7 @@ log "Flattener pipeline 2 file $flattener.json"
 jq <$flattener.json
 echo
 
-log "Create $flattener pipeline 2 from $flattener.yaml"
+log "Create $flattener pipeline 2 from $flattener.json"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -537,7 +537,7 @@ log "Tracer pipeline 3 file $tracer.json"
 jq <$tracer.json
 echo
 
-log "Create $tracer pipeline 3 from $tracer.yaml"
+log "Create $tracer pipeline 3 from $tracer.json"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -594,7 +594,7 @@ log "Gifer pipeline 4 file $gifer.json"
 jq <$gifer.json
 echo
 
-log "Create $gifer pipeline 4 from $gifer.yaml"
+log "Create $gifer pipeline 4 from $gifer.json"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -658,7 +658,7 @@ log "Shuffler pipeline 5 file $shuffler.json"
 jq <$shuffler.json
 echo
 
-log "Create $shuffler pipeline 5 from $shuffler.yaml"
+log "Create $shuffler pipeline 5 from $shuffler.json"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {
@@ -704,7 +704,7 @@ log "Collager pipeline 6 file $collager.json"
 jq <$collager.json
 echo
 
-log "Create $collager pipeline 6 from $collager.yaml"
+log "Create $collager pipeline 6 from $collager.json"
 api=pps_v2.API/CreatePipelineV2
 params=$(cat <<EOF
 {

@@ -440,21 +440,21 @@ $cmd
 echo
 interactivePrompt
 
-log "Show all projects"
+log "Show all projects after creating pipelines"
 cmd="pachctl list projects"
 echo "$cmd"
 $cmd
 echo
 interactivePrompt
 
-log "Show all repos"
+log "Show all repos after creating pipelines"
 cmd="pachctl list repos"
 echo "$cmd"
 $cmd
 echo
 interactivePrompt
 
-log "Show all pipelines"
+log "Show all pipelines created"
 cmd="pachctl list pipelines"
 echo "$cmd"
 $cmd
